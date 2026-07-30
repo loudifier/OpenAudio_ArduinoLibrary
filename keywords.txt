@@ -382,18 +382,6 @@ setUART	KEYWORD2
 getNDataBuffer	KEYWORD2
 setInputOffset	KEYWORD2
 
-AudioInputUSB_F32	KEYWORD1
-makeConnections	KEYWORD2
-
-AudioOutputUSB_F32	KEYWORD1
-
-analyze_CTCSS_F32	KEYWORD1
-initCTCSS	KEYWORD2
-readTonePower	KEYWORD2
-readRefPower	KEYWORD2
-readTonePresent	KEYWORD2
-thresholds	KEYWORD2
-
 AudioAnalyzeFFT256_IQ_F32	KEYWORD1
 AudioAnalyzeFFT1024_F32	KEYWORD1
 AudioAnalyzeFFT1024_IQ_F32	KEYWORD1
@@ -521,3 +509,22 @@ onNoteOff	KEYWORD2
 
 AudioSynthNoiseWhite_F32	KEYWORD2
 setDefaultValues	KEYWORD2
+
+AudioInputUSB_F32	KEYWORD1
+begin	KEYWORD2
+volume	KEYWORD2
+getBufferedSamples	KEYWORD2
+getBufferedSamplesSmooth	KEYWORD2
+getRequestedSamplingFrequ	KEYWORD2
+getActualBIntervalUs	KEYWORD2
+getStatus	KEYWORD2
+
+AudioOutputUSB_F32	KEYWORD1
+getStatus	KEYWORD2
+
+AudioInputUSBQuad_F32	KEYWORD1
+AudioInputUSBHex_F32	KEYWORD1
+AudioInputUSBOct_F32	KEYWORD1
+AudioOutputUSBQuad_F32	KEYWORD1
+AudioOutputUSBHex_F32	KEYWORD1
+AudioOutputUSBOct_F32	KEYWORD1

@@ -76,4 +76,5 @@
 #include "radioNoiseBlanker_F32.h"
 #include "synth_sin_cos_f32.h"
 #include "UART_F32.h"
-// #include "USB_Audio_F32.h" Include this separately if needed. Then in IDE Tools>USB Type>Audio
+// #include "USB_Audio_F32.h"  // Uncomment for USB Audio (Tools > USB Type > Audio or MIDI+Audio+Serial).
+//                            // Requires patched Teensy core. Run scripts/setup.ps1 first.
