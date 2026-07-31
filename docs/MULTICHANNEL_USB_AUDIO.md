@@ -4,9 +4,9 @@ This extension adds multi-channel USB Audio Class 2.0 support with asynchronous 
 
 ## Features
 
-- **Multi-channel**: Up to 8 channels, configurable via `USB_AUDIO_CHANNELS` in Boards menu
-- **Multiple sample rates**: 44.1, 48, or 96kHz operation
-- **Multiple bit depths**: 16, 24, or 32 bit integer or 32 bit float formats
+- **Multi-channel**: Up to 16 channels (2/4/6/8/10/12/14/16), configurable via `USB Audio Channels` in the Tools menu
+- **Multiple sample rates**: 44.1, 48, 96, or 192kHz operation
+- **Multiple bit depths**: 16, 24, or 32 bit integer formats
 - **Asynchronous feedback**: USB audio output (Teensy → Host) uses an isochronous feedback endpoint so the host adapts its sample rate to the Teensy's actual clock, preventing buffer under/overruns.
 - **PI controller**: A proportional-integral controller drives the feedback value, using a ring-buffer-based fill-rate estimator (`LastCall`) for stable rate tracking.
 - **AudioClass 2.0**: Complies with the USB Audio 2.0 specification for wide host compatibility.
@@ -81,9 +81,10 @@ If you installed `boards.local.txt`, under the **Tools** menu you will also see 
 #include <OpenAudio_ArduinoLibrary.h>
 #include "USB_Audio_F32.h"
 
-// Use channel-count-specific classes matching Tools > USB Channels
-AudioInputUSBOct_F32    usb_in;
-AudioOutputUSBOct_F32   usb_out;
+// Both classes automatically expose the channel count configured in Tools > USB channels.
+// Connect one AudioConnection_F32 per channel.
+AudioInputUSB_F32    usb_in;
+AudioOutputUSB_F32   usb_out;
 
 // One connection per channel
 AudioConnection_F32     patch0(usb_in, 0, usb_out, 0);
@@ -101,14 +102,43 @@ void loop() {
 }
 ```
 
+Both classes automatically use the channel count configured in **Tools → USB channels** (the port arrays are sized at compile time). `AudioInputUSB_F32` transmits every received channel; `AudioOutputUSB_F32` accepts the same count of input ports. The compile-time constant `AudioInputUSB_F32::getNumChannels()` (or `AudioOutputUSB_F32::getNumChannels()`) returns that count, so sketches can auto-create loopback connections in a loop. See `USBAudioMultiChannel_F32` for a full 16-channel passthrough.
+
 ### Asynchronous vs Adaptive
 
 By default, the output endpoint (Teensy → Host) runs in asynchronous mode. The Teensy sends a feedback value to the host, which adjusts its transmission rate accordingly. This eliminates the need for sample-rate conversion on the host side.
 
 To switch to adaptive mode (simpler but may cause occasional glitches), comment out the `ASYNC_TX_ENDPOINT` define in `usb_desc.h`.
 
+## Rates, Channels and Bit Depth Limits
+
+USB bandwidth is finite. High speed (480 Mbit) can carry about **8192 bytes/ms**; full speed (12 Mbit) only **1023 bytes/ms**. The required bandwidth is roughly `sample_rate × channels × bytes_per_sample / 1000`.
+
+Maximum bit depth that streams over **high speed**, per sample rate and channel count:
+
+| Channels | 44.1kHz | 48kHz | 96kHz | 192kHz |
+|---|:---:|:---:|:---:|:---:|
+| 2 | 32-bit | 32-bit | 32-bit | 32-bit |
+| 4 | 32-bit | 32-bit | 32-bit | 32-bit |
+| 6 | 32-bit | 32-bit | 32-bit | 32-bit |
+| 8 | 32-bit | 32-bit | 32-bit | 32-bit |
+| 10 | 32-bit | 32-bit | 32-bit | 32-bit |
+| 12 | 32-bit | 32-bit | 32-bit | 24-bit |
+| 14 | 32-bit | 32-bit | 32-bit | 16-bit |
+| 16 | 32-bit | 32-bit | 32-bit | 16-bit |
+
+- If a combination exceeds the high-speed bandwidth, compilation fails with a missing `AUDIO_POLLING_INTERVAL_480` error — reduce channels or bit depth.
+- On full speed, channels are automatically reduced to whatever fits (e.g. 16ch/48k/24-bit streams at 6ch over full speed). Use a high-speed link for the full channel count.
+- At 176.4/192kHz with 24- or 32-bit samples, even 2 channels exceed full-speed bandwidth, so the full-speed descriptor falls back to 2 channels and streaming is only possible over a high-speed connection.
+- When using more than 8 channels, the USB feature unit (volume/mute controls) is limited to the first 8 channels.
+
 
 ## Troubleshooting
+
+### New menu options not appearing after setup
+- After running the setup script, the Arduino IDE must fully load and finish "reloading boards" before new **Tools** menu options (e.g. **USB bit depth**) appear.
+- On some systems the IDE takes **30+ seconds** to start up and reload boards. Let it finish loading — a notification such as "Reloading boards" will pop up in the corner — and only then check the **Tools** menu.
+- If options still don't appear, close the IDE completely, re-run `.\scripts\update_teensy_audio.ps1` (which now replaces the menu block in `boards.txt` on every run), then restart the IDE and wait for it to fully load.
 
 ### Compilation errors about `USB_AUDIO_CHANNELS`
 - The `boards.local.txt` may not be installed; the default falls back to 8 channels in `usb_desc.h`

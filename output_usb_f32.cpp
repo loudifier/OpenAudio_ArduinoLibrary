@@ -10,8 +10,7 @@ audio_block_f32_t *AudioOutputUSB_F32::txBuffer_f32[USBAudioOutInterface::ringTx
 
 AudioOutputUSB_F32::AudioOutputUSB_F32(void)
 	: AudioStream_F32(USB_AUDIO_MAX_NO_CHANNELS, inputQueueArray_f32),
-	  _usbInterface(releaseBlocks, isBlockReady, copy_from_buffers),
-	  numChannels(USB_AUDIO_MAX_NO_CHANNELS)
+	  _usbInterface(releaseBlocks, isBlockReady, copy_from_buffers)
 {
 	begin();
 	_usbInterface.begin();
@@ -19,26 +18,7 @@ AudioOutputUSB_F32::AudioOutputUSB_F32(void)
 
 AudioOutputUSB_F32::AudioOutputUSB_F32(const AudioSettings_F32 &settings)
 	: AudioStream_F32(USB_AUDIO_MAX_NO_CHANNELS, inputQueueArray_f32),
-	  _usbInterface(releaseBlocks, isBlockReady, copy_from_buffers),
-	  numChannels(USB_AUDIO_MAX_NO_CHANNELS)
-{
-	begin();
-	_usbInterface.begin();
-}
-
-AudioOutputUSB_F32::AudioOutputUSB_F32(int nch)
-	: AudioStream_F32(nch, inputQueueArray_f32),
-	  _usbInterface(releaseBlocks, isBlockReady, copy_from_buffers),
-	  numChannels(nch)
-{
-	begin();
-	_usbInterface.begin();
-}
-
-AudioOutputUSB_F32::AudioOutputUSB_F32(const AudioSettings_F32 &settings, int nch)
-	: AudioStream_F32(nch, inputQueueArray_f32),
-	  _usbInterface(releaseBlocks, isBlockReady, copy_from_buffers),
-	  numChannels(nch)
+	  _usbInterface(releaseBlocks, isBlockReady, copy_from_buffers)
 {
 	begin();
 	_usbInterface.begin();
@@ -108,6 +88,7 @@ USBAudioOutInterface::Status AudioOutputUSB_F32::getStatus() const
 	return _usbInterface.getStatus();
 }
 
+#if AUDIO_SUBSLOT_SIZE == 2
 void AudioOutputUSB_F32::copy_from_buffers(uint8_t *dst, uint16_t bIdx, uint16_t noChannels, unsigned int count, unsigned int len)
 {
 	int16_t *dst16 = (int16_t *)dst;
@@ -120,6 +101,37 @@ void AudioOutputUSB_F32::copy_from_buffers(uint8_t *dst, uint16_t bIdx, uint16_t
 		}
 	}
 }
+#elif AUDIO_SUBSLOT_SIZE == 3
+void AudioOutputUSB_F32::copy_from_buffers(uint8_t *dst, uint16_t bIdx, uint16_t noChannels, unsigned int count, unsigned int len)
+{
+	for (uint32_t i = 0; i < len; i++) {
+		for (uint16_t j = 0; j < noChannels; j++) {
+			float sample = txBuffer_f32[bIdx][j]->data[count + i];
+			if (sample > 1.0f) sample = 1.0f;
+			else if (sample < -1.0f) sample = -1.0f;
+			int32_t val = (int32_t)(sample * 8388607.0f);
+			*dst++ = val & 0xFF;
+			*dst++ = (val >> 8) & 0xFF;
+			*dst++ = (val >> 16) & 0xFF;
+		}
+	}
+}
+#elif AUDIO_SUBSLOT_SIZE == 4
+void AudioOutputUSB_F32::copy_from_buffers(uint8_t *dst, uint16_t bIdx, uint16_t noChannels, unsigned int count, unsigned int len)
+{
+	int32_t *dst32 = (int32_t *)dst;
+	for (uint32_t i = 0; i < len; i++) {
+		for (uint16_t j = 0; j < noChannels; j++) {
+			float sample = txBuffer_f32[bIdx][j]->data[count + i];
+			if (sample > 1.0f) sample = 1.0f;
+			else if (sample < -1.0f) sample = -1.0f;
+			*dst32++ = (int32_t)(sample * 2147483647.0f);
+		}
+	}
+}
+#else
+#error "Unsupported AUDIO_SUBSLOT_SIZE (supported: 2, 3, 4)"
+#endif
 
 void AudioOutputUSB_F32::releaseBlocks(uint16_t bIdx, uint16_t noChannels)
 {

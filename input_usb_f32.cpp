@@ -76,6 +76,7 @@ USBAudioInInterface::Status AudioInputUSB_F32::getStatus() const
 	return _usbInterface.getStatus();
 }
 
+#if AUDIO_SUBSLOT_SIZE == 2
 void AudioInputUSB_F32::copy_to_buffers(const uint8_t *src, uint16_t bIdx, uint16_t noChannels, unsigned int count, unsigned int len)
 {
 	const int16_t *src16 = (const int16_t *)src;
@@ -85,6 +86,31 @@ void AudioInputUSB_F32::copy_to_buffers(const uint8_t *src, uint16_t bIdx, uint1
 		}
 	}
 }
+#elif AUDIO_SUBSLOT_SIZE == 3
+void AudioInputUSB_F32::copy_to_buffers(const uint8_t *src, uint16_t bIdx, uint16_t noChannels, unsigned int count, unsigned int len)
+{
+	for (uint32_t i = 0; i < len; i++) {
+		for (uint16_t j = 0; j < noChannels; j++) {
+			uint32_t val = src[0] | ((uint32_t)src[1] << 8) | ((uint32_t)src[2] << 16);
+			if (val & 0x800000) val |= 0xFF000000;
+			rxBuffer_f32[bIdx][j]->data[count + i] = (int32_t)val / 8388608.0f;
+			src += 3;
+		}
+	}
+}
+#elif AUDIO_SUBSLOT_SIZE == 4
+void AudioInputUSB_F32::copy_to_buffers(const uint8_t *src, uint16_t bIdx, uint16_t noChannels, unsigned int count, unsigned int len)
+{
+	const int32_t *src32 = (const int32_t *)src;
+	for (uint32_t i = 0; i < len; i++) {
+		for (uint16_t j = 0; j < noChannels; j++) {
+			rxBuffer_f32[bIdx][j]->data[count + i] = *src32++ / 2147483648.0f;
+		}
+	}
+}
+#else
+#error "Unsupported AUDIO_SUBSLOT_SIZE (supported: 2, 3, 4)"
+#endif
 
 bool AudioInputUSB_F32::setBlockQuite(uint16_t bIdx, uint16_t channel)
 {

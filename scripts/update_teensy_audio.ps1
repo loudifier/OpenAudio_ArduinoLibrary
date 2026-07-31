@@ -63,17 +63,23 @@ if (Test-Path -LiteralPath $configPatchDir) {
     }
 }
 
-# 3. Append menu entries to boards.txt (IDE 2.x may not read boards.local.txt)
+# 3. Replace OpenAudio menu block in boards.txt (IDE 2.x may not read boards.local.txt)
 $boardsFile = "$configDir\boards.txt"
 $sentinel = "# OpenAudio menu additions"
 $menuContent = Get-Content "$configPatchDir\boards.local.txt" -Raw
-if ((Get-Content $boardsFile -Raw) -notmatch [regex]::Escape($sentinel)) {
-    Write-Host "`nAppending OpenAudio menus to boards.txt..."
-    Add-Content -Path $boardsFile -Value "`r`n`r`n$sentinel`r`n$menuContent"
-    Write-Host "  Done."
+$boardsText = Get-Content $boardsFile -Raw
+if ($boardsText -match [regex]::Escape($sentinel)) {
+    Write-Host "`nReplacing existing OpenAudio menus in boards.txt..."
+    $idx = $boardsText.IndexOf($sentinel)
+    $head = $boardsText.Substring(0, $idx).TrimEnd("`r", "`n")
+    $newText = "$head`r`n`r`n$sentinel`r`n$menuContent"
+    [System.IO.File]::WriteAllText($boardsFile, $newText)
 } else {
-    Write-Host "`nOpenAudio menus already present in boards.txt."
+    Write-Host "`nAppending OpenAudio menus to boards.txt..."
+    $newText = "$boardsText`r`n`r`n$sentinel`r`n$menuContent"
+    [System.IO.File]::WriteAllText($boardsFile, $newText)
 }
+Write-Host "  Done."
 
 # 4. Kill stale backend processes and clear caches
 if (-not $noCacheClear) {

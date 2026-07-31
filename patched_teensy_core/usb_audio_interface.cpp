@@ -43,7 +43,9 @@ volatile uint32_t tx_underrun_count = 0;
 namespace {
 	
 	//variables used by USBAudioInInterface and AudioOutputUSB ==================
-  #if (USB_AUDIO_NO_CHANNELS_12*AUDIO_NUM_SUBFRAMES_PER_POLLING_12) < (USB_AUDIO_NO_CHANNELS_480*AUDIO_NUM_SUBFRAMES_PER_POLLING_480)
+  // the static buffers below must be large enough for the polling interval of either link speed
+  // (with many channels or high sample rates either the high- or the full-speed buffer can be the larger one)
+  #if AUDIO_RX_SIZE_480 > AUDIO_RX_SIZE_12
     #define AUDIO_TX_SIZE         AUDIO_TX_SIZE_480
     #define AUDIO_RX_SIZE         AUDIO_RX_SIZE_480
   #else
@@ -946,13 +948,15 @@ void usb_audio_configure(void)
 	feedback_accumulator = feedback_accumulator_default;
 
 	memset(&rx_transfer, 0, sizeof(rx_transfer));
-	usb_config_rx_iso(AUDIO_RX_ENDPOINT, AUDIO_RX_SIZE, 1, rx_event);
+	//configure the endpoints for the actually connected link speed (the buffers are sized for either speed, but the
+	//max packet size must match the active speed's descriptor and is limited to 1024/1023 bytes for high/full speed)
+	usb_config_rx_iso(AUDIO_RX_ENDPOINT, usb_high_speed ? AUDIO_RX_SIZE_480 : AUDIO_RX_SIZE_12, 1, rx_event);
 	rx_event(NULL);
 	memset(&sync_transfer, 0, sizeof(sync_transfer));
 	usb_config_tx_iso(AUDIO_SYNC_ENDPOINT, usb_audio_sync_nbytes, 1, sync_event);
 	sync_event(NULL);
 	memset(&tx_transfer, 0, sizeof(tx_transfer));
-	usb_config_tx_iso(AUDIO_TX_ENDPOINT, AUDIO_TX_SIZE, 1, tx_event);
+	usb_config_tx_iso(AUDIO_TX_ENDPOINT, usb_high_speed ? AUDIO_TX_SIZE_480 : AUDIO_TX_SIZE_12, 1, tx_event);
 	tx_event(NULL);
 	expectedIsrIntervalCycles = audioPollingIntervalSec *F_CPU_ACTUAL;
 	lastCallReceiveIsr.reset(expectedIsrIntervalCycles);

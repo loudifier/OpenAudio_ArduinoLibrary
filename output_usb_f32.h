@@ -12,10 +12,9 @@ class AudioOutputUSB_F32 : public AudioStream_F32
 public:
 	AudioOutputUSB_F32(void);
 	AudioOutputUSB_F32(const AudioSettings_F32 &settings);
-	AudioOutputUSB_F32(int nch);
-	AudioOutputUSB_F32(const AudioSettings_F32 &settings, int nch);
 	virtual void update(void);
 	void begin(void);
+	static constexpr int getNumChannels() { return USB_AUDIO_MAX_NO_CHANNELS; }
 	float getBufferedSamples() const;
 	float getBufferedSamplesSmooth() const;
 	float getActualBIntervalUs() const;
@@ -29,18 +28,7 @@ private:
 	static audio_block_f32_t *txBuffer_f32[USBAudioOutInterface::ringTxBufferSize][USB_AUDIO_MAX_NO_CHANNELS];
 	audio_block_f32_t *inputQueueArray_f32[USB_AUDIO_MAX_NO_CHANNELS];
 	USBAudioOutInterface _usbInterface;
-	int numChannels;
 };
-
-#if USB_AUDIO_NO_CHANNELS_480 >= 4
-class AudioOutputUSBQuad_F32 : public AudioOutputUSB_F32 { public: AudioOutputUSBQuad_F32(void) : AudioOutputUSB_F32(4) {} };
-#if USB_AUDIO_NO_CHANNELS_480 >= 6
-class AudioOutputUSBHex_F32 : public AudioOutputUSB_F32 { public: AudioOutputUSBHex_F32(void) : AudioOutputUSB_F32(6) {} };
-#if USB_AUDIO_NO_CHANNELS_480 >= 8
-class AudioOutputUSBOct_F32 : public AudioOutputUSB_F32 { public: AudioOutputUSBOct_F32(void) : AudioOutputUSB_F32(8) {} };
-#endif
-#endif
-#endif
 
 #endif // AUDIO_INTERFACE
 #endif // output_usb_f32_h_
