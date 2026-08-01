@@ -522,3 +522,19 @@ getStatus	KEYWORD2
 AudioOutputUSB_F32	KEYWORD1
 getStatus	KEYWORD2
 
+AudioInputTDM8_F32	KEYWORD1
+begin	KEYWORD2
+getNumChannels	KEYWORD2
+
+AudioOutputTDM8_F32	KEYWORD1
+begin	KEYWORD2
+getNumChannels	KEYWORD2
+
+AudioInputTDM16_F32	KEYWORD1
+begin	KEYWORD2
+getNumChannels	KEYWORD2
+
+AudioOutputTDM16_F32	KEYWORD1
+begin	KEYWORD2
+getNumChannels	KEYWORD2
+

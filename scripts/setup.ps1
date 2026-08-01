@@ -108,7 +108,7 @@ if (Test-Path -LiteralPath $checkCore) {
     Write-Host "  [FAIL] Patched core files missing at $checkCore"
     $ok = $false
 }
-$checkLib = "$arduinoLibPath\examples\USBAudioPassthrough_F32\USBAudioPassthrough_F32.ino"
+$checkLib = "$arduinoLibPath\examples\AudioUSB2TDM\AudioUSB2TDM.ino"
 if (Test-Path -LiteralPath $checkLib) {
     Write-Host "  [OK] Library examples accessible"
 } else {
@@ -119,7 +119,7 @@ if (Test-Path -LiteralPath $checkLib) {
 Write-Host ""
 if ($ok) {
     Write-Host "Setup complete! Restart Arduino IDE, then open:"
-    Write-Host "  File > Examples > OpenAudio_ArduinoLibrary > USBAudioPassthrough_F32"
+    Write-Host "  File > Examples > OpenAudio_ArduinoLibrary > AudioUSB2TDM"
     Write-Host ""
     Write-Host "Backup:  .\scripts\restore_teensy_audio.ps1"
 } else {

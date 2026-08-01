@@ -20,6 +20,8 @@ The primary documentation is the Design Tool.  Clicking on any of the classes br
 **Teensy 3 and 4** During 2020 this library has undergone revision to make it Teensy 4.x compatible.  Much of this related to using multiple sampling rates with the I2S clocks and the interrupt/DMA code for data transfer. The files and associated classes output_i2s_f32.h, output_i2s_f32.cpp, input_i2s_f32.h, input_i2s_f32.cpp are now
 ready to be used for T3.x and T4.x.  There are some restrictions, particularly this should be used with 16-bit I2S codec data. Codec sample rates can be varied. Variable block size is supported, but be sure the settings option is used.  Thanks to Chip, @jcj83429 and all the Teensy development folks.
 
+**TDM 8/16 Channel** Teensy 4.x TDM I/O is available as Float32 modules: `input_tdm8_f32`, `output_tdm8_f32`, `input_tdm16_f32`, `output_tdm16_f32` (classes `AudioInputTDM8_F32`, `AudioOutputTDM8_F32`, `AudioInputTDM16_F32`, `AudioOutputTDM16_F32`). Each uses 32-bit TDM slots on SAI1 (pins 7/8 TX/RX data, 23 MCLK, 21 BCLK, 20 SYNC). See `docs/TDM_AUDIO.md`.
+
 **Tympan Project** Many of the classes in this library were put together as part of the [Tympan Project.](https://github.com/Tympan)  That is oriented towards open-source hearing aid and hearing aid development tools. It has its own [Tympan Design Tool](https://tympan.github.io/Tympan_Audio_Design_Tool/) as well as some custom Teensy-based hardware. Additionally, there are a few classes in this library that use terminology and variables that are specific to audiology.  It is intended that these, in time, be replaced by similar classes with more conventional descriptors.  And, of course, if your interest is in hearing aids, you should spend time at the Tympan project!
 
 Notes
