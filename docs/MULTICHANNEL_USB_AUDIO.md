@@ -38,13 +38,12 @@ From the OpenAudio library root:
 
 The script handles everything:
 
-1. **`library.properties`** — Creates it if missing (required by Arduino IDE 2.x)
-2. **Detect Teensyduino** — Finds your install under `%LOCALAPPDATA%\Arduino15\`
-3. **Backup** — Saves originals to `backups/<version>/`
-4. **Patch core** — Installs multi-channel `usb_desc.h`, `usb_desc.c`, `usb.c`, `usb_audio.*`, `usb_audio_interface.*`
-5. **Config** — Adds `boards.local.txt` (for USB Audio Channels menu) and updates `platform.txt`
-6. **Arduino IDE library** — Copies the library into `Documents\Arduino\libraries\`
-7. **Cache** — Clears Arduino IDE 2.x cache
+1. **Detect Teensyduino** — Finds your install under `%LOCALAPPDATA%\Arduino15\`
+2. **Backup** — Saves originals to `backups/<version>/`
+3. **Patch core** — Installs multi-channel `usb_desc.h`, `usb_desc.c`, `usb.c`, `usb_audio.*`, `usb_audio_interface.*`
+4. **Config** — Adds `boards.local.txt` (for USB Audio Channels menu) and updates `platform.txt`
+5. **Arduino IDE library** — Copies the library into `Documents\Arduino\libraries\`
+6. **Cache** — Clears Arduino IDE 2.x cache
 
 After running, **restart Arduino IDE**. Examples appear under **File → Examples → OpenAudio_ArduinoLibrary**.
 
@@ -64,7 +63,7 @@ After running, **restart Arduino IDE**. Examples appear under **File → Example
    ```
 4. **Restart Arduino IDE**
 
-> **Note:** The library ships with `library.properties`, but the setup script will create it as a fallback.
+> **Note:** The library ships without a `library.properties`, matching upstream OpenAudio (which is installed by zip, not Library Manager).
 
 ## Usage
 

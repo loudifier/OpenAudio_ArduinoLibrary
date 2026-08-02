@@ -6,8 +6,7 @@
     2. Backs up original Teensy core USB audio files
     3. Applies patched core files for multi-channel USB audio
     4. Installs library in Arduino IDE's sketchbook folder
-    5. Ensures library.properties exists (required by Arduino IDE 2.x)
-    6. Validates the setup
+    5. Validates the setup
 #>
 
 $ErrorActionPreference = "Stop"
@@ -17,26 +16,6 @@ Write-Host "OpenAudio_ArduinoLibrary Setup"
 Write-Host "================================"
 Write-Host ""
 
-# --- Step 0: Ensure library.properties exists ---
-$propFile = "$repoDir\library.properties"
-if (-not (Test-Path -LiteralPath $propFile)) {
-    Write-Host "Step 0: Creating library.properties..."
-    @"
-name=OpenAudio_ArduinoLibrary
-version=1.0.0
-author=Chip Audette, Bob Larkin, and contributors
-maintainer=Bob Larkin
-sentence=OpenAudio F32 Arduino Library - Floating-point audio processing for Teensy.
-paragraph=Extends the Teensy Audio Library with float32 audio blocks, including multi-channel USB Audio Class 2.0 with asynchronous feedback.
-category=Signal Input/Output
-url=https://github.com/chipaudette/OpenAudio_ArduinoLibrary
-architectures=teensy
-includes=OpenAudio_ArduinoLibrary.h
-"@ | Out-File -FilePath $propFile -Encoding utf8
-    Write-Host "  Created: $propFile"
-} else {
-    Write-Host "Step 0: library.properties found."
-}
 
 # --- Detect Teensy installation ---
 $possiblePaths = @(
