@@ -1,8 +1,9 @@
 /*
  * USB<->TDM8 example for Teensy USB audio and OpenAudio_ArduinoLibrary
  *
- * Under Tools menu, set Audio sample rate (up to 96kHz), 8 channels, and bit depth.
+ * Under Tools menu, set Audio sample rate (up to 96kHz), 8 channels, and desired USB bit depth.
  * Set USB type to Audio or Serial + MIDI + Audio
+ * When making changes to USB settings, you may need to uninstall the device in Device Manager and reconnect for USB audio to work properly
  * 
  * Each TDM slot is 32 bits (8 slots x 32 bits = 256 bit clocks per frame).
  * Wiring to the Teensy 4.x SAI1 TDM pins:

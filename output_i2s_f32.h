@@ -65,7 +65,7 @@ public:
 	void begin(void);
 	void begin(bool);
 	friend class AudioInputI2S_F32;
-	friend class AudioInputI2S_F32;
+	friend class AudioInputI2Ssink_F32;
 	#if defined(__IMXRT1062__)
 	friend class AudioOutputI2SQuad_F32;
 	friend class AudioInputI2SQuad_F32;
@@ -81,7 +81,7 @@ public:
 
 	static float setI2SFreq_T3(const float);  // I2S clock for T3,x
 protected:
-	AudioOutputI2S_F32(int dummy): AudioStream_F32(2, inputQueueArray) {} // to be used only inside AudioOutputI2Sslave !!
+	AudioOutputI2S_F32(int dummy): AudioStream_F32(2, inputQueueArray) {} // to be used only inside AudioOutputI2Ssink !!
 	static void config_i2s(void);
 	static void config_i2s(bool);
 	static void config_i2s(float);
@@ -93,24 +93,32 @@ protected:
 	static void isr_16(void);
 	static void isr_32(void);
 	static void isr(void);
+protected:
+	static float sample_rate_Hz;
+	static int audio_block_samples;
 private:
 	static audio_block_f32_t *block_left_2nd;
 	static audio_block_f32_t *block_right_2nd;
 	static uint16_t block_left_offset;
 	static uint16_t block_right_offset;
 	audio_block_f32_t *inputQueueArray[2];
-	static float sample_rate_Hz;
-	static int audio_block_samples;
 	volatile uint8_t enabled = 1;
     float outputScale = 1.0f;  // Quick volume control
 };
 
-class AudioOutputI2Sslave_F32 : public AudioOutputI2S_F32
+// I2S "sink": outputs audio on SAI1 (data out = pin 7) but does NOT generate the
+// bit clock or frame sync.  BCLK (pin 21) and FS (pin 20) must be driven by an
+// external clock source (another Teensy, a codec in its clock-source role, etc.).
+// Expects a 64*fs bit clock (2x 32-bit slots).  On Teensy 4.x this uses full
+// 32-bit data in each slot.  On Teensy 3.x it uses the original 16-bit-in-the-
+// upper-half packing.  The DMA ISR drives update_all(), so the audio block
+// scheduler is clocked by the external clock source.
+class AudioOutputI2Ssink_F32 : public AudioOutputI2S_F32
 {
 public:
-	AudioOutputI2Sslave_F32(void) : AudioOutputI2S_F32(0) { begin(); } ;
+	AudioOutputI2Ssink_F32(void) : AudioOutputI2S_F32(0) { begin(); } ;
 	void begin(void);
-	friend class AudioInputI2Sslave_F32;
+	friend class AudioInputI2Ssink_F32;
 	friend void dma_ch0_isr(void);
 protected:
 	static void config_i2s(void);

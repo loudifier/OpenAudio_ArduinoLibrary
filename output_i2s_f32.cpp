@@ -530,10 +530,12 @@ void AudioOutputI2S_F32::config_i2s(bool transferUsing32bit, float fs_Hz)
 
 /******************************************************************/
 
-// From Chip: The I2SSlave functionality has NOT been extended to
+// From Chip: The I2Ssink functionality has NOT been extended to
 // allow for different block sizes or sample rates (2020-10-31)
+// On Teensy 4.x this uses the same full 32-bit data DMA path as the
+// master AudioOutputI2S_F32 (SSIZE/DSIZE=2, NBYTES=4, TDR0+0).
 
-void AudioOutputI2Sslave_F32::begin(void)
+void AudioOutputI2Ssink_F32::begin(void)
 {
     dma.begin(true); // Allocate the DMA channel first
 
@@ -541,7 +543,7 @@ void AudioOutputI2Sslave_F32::begin(void)
     block_left_1st = NULL;
     block_right_1st = NULL;
 
-    AudioOutputI2Sslave_F32::config_i2s();
+    AudioOutputI2Ssink_F32::config_i2s();
 
 #if defined(KINETISK)
     CORE_PIN22_CONFIG = PORT_PCR_MUX(6); // pin 22, PTC1, I2S0_TXD0
@@ -564,19 +566,18 @@ void AudioOutputI2Sslave_F32::begin(void)
 
 #elif defined(__IMXRT1062__)
     CORE_PIN7_CONFIG  = 3;  //1:TX_DATA0
+
     dma.TCD->SADDR = i2s_tx_buffer;
-    dma.TCD->SOFF = 2;
-    dma.TCD->ATTR = DMA_TCD_ATTR_SSIZE(1) | DMA_TCD_ATTR_DSIZE(1);
-    dma.TCD->NBYTES_MLNO = 2;
-    dma.TCD->SLAST = -sizeof(i2s_tx_buffer);
-    //dma.TCD->DADDR = (void *)((uint32_t)&I2S1_TDR1 + 2);
+    dma.TCD->SOFF = 4;
+    dma.TCD->ATTR = DMA_TCD_ATTR_SSIZE(2) | DMA_TCD_ATTR_DSIZE(2);
+    dma.TCD->NBYTES_MLNO = 4;
+    dma.TCD->SLAST = -I2S_BUFFER_TO_USE_BYTES;
     dma.TCD->DOFF = 0;
-    dma.TCD->CITER_ELINKNO = sizeof(i2s_tx_buffer) / 2;
+    dma.TCD->CITER_ELINKNO = I2S_BUFFER_TO_USE_BYTES / 4;
     dma.TCD->DLASTSGA = 0;
-    dma.TCD->BITER_ELINKNO = sizeof(i2s_tx_buffer) / 2;
-    //dma.triggerAtHardwareEvent(DMAMUX_SOURCE_SAI2_TX);
-    dma.TCD->DADDR = (void *)((uint32_t)&I2S1_TDR0 + 2);
+    dma.TCD->BITER_ELINKNO = I2S_BUFFER_TO_USE_BYTES / 4;
     dma.TCD->CSR = DMA_TCD_CSR_INTHALF | DMA_TCD_CSR_INTMAJOR;
+    dma.TCD->DADDR = (void *)((uint32_t)&I2S1_TDR0 + 0);
     dma.triggerAtHardwareEvent(DMAMUX_SOURCE_SAI1_TX);
     dma.enable();
 
@@ -591,7 +592,7 @@ void AudioOutputI2Sslave_F32::begin(void)
 }
 
 
- void AudioOutputI2Sslave_F32::config_i2s(void)
+ void AudioOutputI2Ssink_F32::config_i2s(void)
 {
 #if defined(KINETISK)
     SIM_SCGC6 |= SIM_SCGC6_I2S;
@@ -642,7 +643,8 @@ void AudioOutputI2Sslave_F32::begin(void)
     if (I2S1_TCSR & I2S_TCSR_TE) return;
     if (I2S1_RCSR & I2S_RCSR_RE) return;
 
-    // not using MCLK in slave mode - hope that's ok?
+    // not using MCLK in sink mode - the bit clock and frame sync come from an
+    // external clock source
     //CORE_PIN23_CONFIG = 3;  // AD_B1_09  ALT3=SAI1_MCLK
     CORE_PIN21_CONFIG = 3;  // AD_B1_11  ALT3=SAI1_RX_BCLK
     CORE_PIN20_CONFIG = 3;  // AD_B1_10  ALT3=SAI1_RX_SYNC

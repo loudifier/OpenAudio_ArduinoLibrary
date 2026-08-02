@@ -66,26 +66,32 @@ public:
 	void clear_isOutOfMemory(void) { flag_out_of_memory = 0; }
 	//friend class AudioOutputI2S_F32;
 protected:
-	AudioInputI2S_F32(int dummy): AudioStream_F32(0, NULL) {} // to be used only inside AudioInputI2Sslave !!
+	AudioInputI2S_F32(int dummy): AudioStream_F32(0, NULL) {} // to be used only inside AudioInputI2Ssink !!
 	static bool update_responsibility;
 	static DMAChannel dma;
 	static void isr_32(void);
 	static void isr(void);
 	virtual void update_1chan(int, audio_block_f32_t *&);
+protected:
+	static float sample_rate_Hz;
+	static int audio_block_samples;
 private:
 	static audio_block_f32_t *block_left_f32;
 	static audio_block_f32_t *block_right_f32;
-	static float sample_rate_Hz;
-	static int audio_block_samples;
 	static uint16_t block_offset;
 	static int flag_out_of_memory;
 	static unsigned long update_counter;
 };
 
-class AudioInputI2Sslave_F32 : public AudioInputI2S_F32
+// I2S "sink": receives audio on SAI1 (data in = pin 8) but does NOT generate the
+// bit clock or frame sync.  BCLK (pin 21) and FS (pin 20) must be driven by an
+// external clock source.  Expects a 64*fs bit clock (2x 32-bit slots).  On
+// Teensy 4.x this uses full 32-bit data in each slot; the SAI receiver is the
+// only block enabled (no TCSR write), matching the proven F32 input pattern.
+class AudioInputI2Ssink_F32 : public AudioInputI2S_F32
 {
 public:
-	AudioInputI2Sslave_F32(void) : AudioInputI2S_F32(0) { begin(); }
+	AudioInputI2Ssink_F32(void) : AudioInputI2S_F32(0) { begin(); }
 	void begin(void);
 	friend void dma_ch1_isr(void);
 };

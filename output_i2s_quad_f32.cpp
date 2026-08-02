@@ -332,7 +332,7 @@ void AudioOutputI2SQuad_F32::config_i2s(int fs_Hz)
     I2S1_RCR5 = I2S_RCR5_WNW((32 - 1)) | I2S_RCR5_W0W((32 - 1)) | I2S_RCR5_FBT((32 - 1));
 }
 
-// From Chip: The I2SSlave functionality has NOT been extended to
+// From Chip: The I2Ssink functionality has NOT been extended to
 // allow for different block sizes or sample rates (2020-10-31)
 // Quad slave object not working yet!  Greg Raven KF5N
 
