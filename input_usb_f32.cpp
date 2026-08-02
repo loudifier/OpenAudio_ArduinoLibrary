@@ -76,6 +76,11 @@ USBAudioInInterface::Status AudioInputUSB_F32::getStatus() const
 	return _usbInterface.getStatus();
 }
 
+float AudioInputUSB_F32::volume(void)
+{
+	return _usbInterface.volume();
+}
+
 #if AUDIO_SUBSLOT_SIZE == 2
 void AudioInputUSB_F32::copy_to_buffers(const uint8_t *src, uint16_t bIdx, uint16_t noChannels, unsigned int count, unsigned int len)
 {

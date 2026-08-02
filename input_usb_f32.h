@@ -20,6 +20,7 @@ public:
 	float getRequestedSamplingFrequ() const;
 	float getActualBIntervalUs() const;
 	USBAudioInInterface::Status getStatus() const;
+	float volume(void);
 
 private:
 	static void copy_to_buffers(const uint8_t *src, uint16_t bIdx, uint16_t noChannels, unsigned int count, unsigned int len);
