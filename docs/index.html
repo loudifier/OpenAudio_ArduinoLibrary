@@ -2181,6 +2181,14 @@ look ahead delay, as well.</p>
     <p>Objects of this class can be created using the typical, minimal constructor using no arguments.
     Or, to control the sample rate and block size, the constructor can be passed an AudioSettings_F32
     object that has been configured with your desired settings.</p>
+    <p>To force a 16, 24, or 32-bit I2S slot word width, pass the width as the
+    first constructor argument: <span class=func><span class=keyword>AudioInputI2S_F32</span>(<strong>16</strong>)</span>
+    or <span class=func><span class=keyword>AudioInputI2S_F32</span>(<strong>AudioSettings_F32</strong> settings, <strong>24</strong>)</span>.
+    In master mode the SAI generates a short frame matching the width: 16-bit uses
+    a 32 x fs bit clock, 24-bit uses a 48 x fs bit clock (192 x fs MCLK), and 32-bit
+    (the default) uses the standard 64 x fs bit clock.  Teensy 4.x only for 16/24-bit;
+    Teensy 3.x always uses 32-bit slots.  An externally-clocked "sink" on another
+    Teensy auto-detects the same width from the BCLK/FS ratio.</p>
     <h3>Functions</h3>
     <p>This object has no functions to call from the Arduino sketch.  It
         simply streams data from the I2S hardware to its 2 output ports.</p>
@@ -2206,7 +2214,8 @@ look ahead delay, as well.</p>
     and slave modes may not be mixed (both must be of the same type).</p>
     <p>As of May 2022, the I2S input and output objects can handle 24 or 32-bit
     data transfer, if that is supported by the audio hardware device.
-    No class functions are needed.  It is "automagic".</p>
+    The slot word width can be selected (16/24/32 bits) with the constructor
+    argument described above; the default is 32-bit slots.</p>
 
 </script>
 <script type="text/x-red" data-template-name="AudioInputI2S_F32">
@@ -2305,6 +2314,13 @@ look ahead delay, as well.</p>
     <p>Objects of this class can be created using the typical, minimal constructor using no arguments.
     Or, to control the sample rate and block size, the constructor can be passed an AudioSettings_F32
     object that has been configured with your desired settings.</p>
+    <p>The slot word width (16/24/32 bits) is auto-detected from the external
+    clock's BCLK/FS ratio at startup: 32/48/64 x fs BCLK is expected for 16/24/32-bit
+    slots per frame.  To force a width instead of auto-detecting, pass it as the
+    first constructor argument: <span class=func><span class=keyword>AudioInputI2Ssink_F32</span>(<strong>24</strong>)</span>.
+    A "master" Teensy created with the matching width produces the correct short
+    frame (e.g. <span class=func><span class=keyword>AudioOutputI2S_F32</span>(<strong>16</strong>)</span>
+    for a 32 x fs bit clock).</p>
     <h3>Functions</h3>
     <p>This object has no functions to call from the Arduino sketch.  It
         simply streams data from the I2S hardware to its 2 output ports.</p>
@@ -2318,8 +2334,8 @@ look ahead delay, as well.</p>
         <tr class=odd><td align=center>20</td><td>FS</td><td>Input</td></tr>
         <tr class=odd><td align=center>8</td><td>RX</td><td>Input</td></tr>
     </table>
-    <p>MCLK is not used in sink mode.  A 64 x fs bit clock is expected
-        for two 32-bit slots per frame.</p>
+    <p>MCLK is not used in sink mode.  The bit clock rate is measured at startup
+        to detect the slot width (64 x fs for 32-bit slots by default).</p>
     <h3>Notes</h3>
     <p>Only one I2S input and one I2S output object may be used.  Master
     and sink modes may not be mixed (both must be of the same type).</p>
@@ -2479,6 +2495,14 @@ look ahead delay, as well.</p>
     <p>Objects of this class can be created using the typical, minimal constructor using no arguments.
     Or, to control the sample rate and block size, the constructor can be passed an AudioSettings_F32
     object that has been configured with your desired settings.</p>
+    <p>To force a 16, 24, or 32-bit I2S slot word width, pass the width as the
+    first constructor argument: <span class=func><span class=keyword>AudioOutputI2S_F32</span>(<strong>16</strong>)</span>
+    or <span class=func><span class=keyword>AudioOutputI2S_F32</span>(<strong>AudioSettings_F32</strong> settings, <strong>24</strong>)</span>.
+    In master mode the SAI generates a short frame matching the width: 16-bit uses
+    a 32 x fs bit clock, 24-bit uses a 48 x fs bit clock (192 x fs MCLK), and 32-bit
+    (the default) uses the standard 64 x fs bit clock.  Teensy 4.x only for 16/24-bit;
+    Teensy 3.x always uses 32-bit slots.  Use the matching width on an externally-clocked
+    "sink" Teensy (which auto-detects the width from the BCLK/FS ratio).</p>
     <h3>Functions</h3>
     <p class=func><span class=keyword>setGain</span>(<strong>float </strong>Gain);</p>
     <p class=desc>Sets the output gain of both left and right channels. Values are unconstrained, but
@@ -2532,6 +2556,13 @@ look ahead delay, as well.</p>
     <p>Objects of this class can be created using the typical, minimal constructor using no arguments.
     Or, to control the sample rate and block size, the constructor can be passed an AudioSettings_F32
     object that has been configured with your desired settings.</p>
+    <p>The slot word width (16/24/32 bits) is auto-detected from the external
+    clock's BCLK/FS ratio at startup: 32/48/64 x fs BCLK is expected for 16/24/32-bit
+    slots per frame.  To force a width instead of auto-detecting, pass it as the
+    first constructor argument: <span class=func><span class=keyword>AudioOutputI2Ssink_F32</span>(<strong>24</strong>)</span>.
+    A "master" Teensy created with the matching width produces the correct short
+    frame (e.g. <span class=func><span class=keyword>AudioOutputI2S_F32</span>(<strong>16</strong>)</span>
+    for a 32 x fs bit clock).</p>
     <h3>Functions</h3>
     <p>This object has no functions to call from the Arduino sketch.  It
         simply streams data from its 2 input ports to the I2S hardware.</p>
@@ -2545,8 +2576,8 @@ look ahead delay, as well.</p>
         <tr class=odd><td align=center>20</td><td>FS</td><td>Input</td></tr>
         <tr class=odd><td align=center>7</td><td>TX</td><td>Output</td></tr>
     </table>
-    <p>MCLK is not used in sink mode.  A 64 x fs bit clock is expected
-        for two 32-bit slots per frame.</p>
+    <p>MCLK is not used in sink mode.  The bit clock rate is measured at startup
+        to detect the slot width (64 x fs for 32-bit slots by default).</p>
     <h3>Examples</h3>
     <p class=exam>File &gt; Examples &gt; AudioOutputI2Ssink_F32_Example
     </p>

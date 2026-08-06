@@ -35,6 +35,7 @@
 // Removed old commented out code.  RSL 30 May 2022
 
 #include "output_i2s_f32.h"
+#include "input_i2s_f32.h"
 #include <arm_math.h>
 #include <Audio.h> //to get access to Audio/utlity/imxrt_hw.h...do we really need this??? WEA 2020-10-31
 
@@ -93,6 +94,8 @@ DMAMEM __attribute__((aligned(32))) static uint64_t i2s_tx_buffer[AUDIO_BLOCK_SA
 
 float AudioOutputI2S_F32::sample_rate_Hz = AUDIO_SAMPLE_RATE;
 int AudioOutputI2S_F32::audio_block_samples = AUDIO_BLOCK_SAMPLES;
+int AudioOutputI2S_F32::word_width = 32;
+int AudioOutputI2S_F32::expected_word_width = 0;
 
 #if defined(__IMXRT1062__)
 #include <utility/imxrt_hw.h>   //from Teensy Audio library.  For set_audioClock()
@@ -306,7 +309,13 @@ void AudioOutputI2S_F32::update(void)
 
         //scale F32 to Int32
         //block_f32_scaled = AudioStream_F32::allocate_f32();
-        scale_f32_to_i32(block_f32->data, block_f32_scaled->data, audio_block_samples);
+        if (word_width == 16) {
+            scale_f32_to_i16(block_f32->data, block_f32_scaled->data, audio_block_samples);
+        } else if (word_width == 24) {
+            scale_f32_to_i24(block_f32->data, block_f32_scaled->data, audio_block_samples);
+        } else {
+            scale_f32_to_i32(block_f32->data, block_f32_scaled->data, audio_block_samples);
+        }
         //scale_f32_to_i16(block_f32->data, block_f32_scaled->data, audio_block_samples);
 
          //now process the data blocks
@@ -342,7 +351,13 @@ void AudioOutputI2S_F32::update(void)
 
         //scale F32 to Int32
         //block_f32_scaled = AudioStream_F32::allocate_f32();
-        scale_f32_to_i32(block_f32->data, block_f32_scaled->data, audio_block_samples);
+        if (word_width == 16) {
+            scale_f32_to_i16(block_f32->data, block_f32_scaled->data, audio_block_samples);
+        } else if (word_width == 24) {
+            scale_f32_to_i24(block_f32->data, block_f32_scaled->data, audio_block_samples);
+        } else {
+            scale_f32_to_i32(block_f32->data, block_f32_scaled->data, audio_block_samples);
+        }
         //scale_f32_to_i16(block_f32->data, block_f32_scaled->data, audio_block_samples);
 
         __disable_irq();
@@ -476,11 +491,30 @@ void AudioOutputI2S_F32::config_i2s(bool transferUsing32bit, float fs_Hz)
     //int fs = AUDIO_SAMPLE_RATE_EXACT; //original from Teensy Audio Library
     int fs = fs_Hz;
 
+    // Slot word width for the SAI (16/24/32 bits).  In master mode the SAI
+    // generates a short frame matching the width: 16-bit -> 32 BCLK/frame,
+    // 24-bit -> 48 BCLK/frame.  A 24-bit frame needs a 192*fs MCLK so that the
+    // power-of-2 SAI bit clock divider can produce 48*fs BCLK (256/48 is not a
+    // power of 2); 16-bit stays on 256*fs MCLK (256/8 = 32) and 32-bit uses the
+    // default 64*fs BCLK from 256*fs MCLK.  The bit clock divide ratio is
+    // 2^(DIV+1), so bclk_div 1 -> /4 and 3 -> /8.
+    int mclk_ratio = 256;
+    int bclk_div = 1;                     // BCLK = MCLK / ((bclk_div+1)*2)
+    if (expected_word_width == 16 || expected_word_width == 24) word_width = expected_word_width;
+    else word_width = 32;                 // 0 (auto) defaults to 32-bit slots in master mode
+    int ww = word_width - 1;
+    if (word_width == 16) {
+        bclk_div = 3;                     // 256*fs / 8 = 32*fs
+    } else if (word_width == 24) {
+        mclk_ratio = 192;                 // 192*fs / 4 = 48*fs
+    }
+    AudioInputI2S_F32::setWordWidth(word_width);
+
     // PLL between 27*24 = 648MHz und 54*24=1296MHz
     int n1 = 4; //SAI prescaler 4 => (n1*n2) = multiple of 4
-    int n2 = 1 + (24000000 * 27) / (fs * 256 * n1);
+    int n2 = 1 + (24000000 * 27) / (fs * mclk_ratio * n1);
 
-    double C = ((double)fs * 256 * n1 * n2) / 24000000;
+    double C = ((double)fs * mclk_ratio * n1 * n2) / 24000000;
     int c0 = C;
     int c2 = 10000;
     int c1 = C * c2 - (c0 * c2);
@@ -509,21 +543,21 @@ void AudioOutputI2S_F32::config_i2s(bool transferUsing32bit, float fs_Hz)
     //I2S1_TCSR = (1<<25); //Reset
     I2S1_TCR1 = I2S_TCR1_RFW(1);
     I2S1_TCR2 = I2S_TCR2_SYNC(tsync) | I2S_TCR2_BCP // sync=0; tx is async;
-            | (I2S_TCR2_BCD | I2S_TCR2_DIV((1)) | I2S_TCR2_MSEL(1));
+            | (I2S_TCR2_BCD | I2S_TCR2_DIV((bclk_div)) | I2S_TCR2_MSEL(1));
     I2S1_TCR3 = I2S_TCR3_TCE;
-    I2S1_TCR4 = I2S_TCR4_FRSZ((2-1)) | I2S_TCR4_SYWD((32-1)) | I2S_TCR4_MF
+    I2S1_TCR4 = I2S_TCR4_FRSZ((2-1)) | I2S_TCR4_SYWD((ww)) | I2S_TCR4_MF
             | I2S_TCR4_FSD | I2S_TCR4_FSE | I2S_TCR4_FSP;
-    I2S1_TCR5 = I2S_TCR5_WNW((32-1)) | I2S_TCR5_W0W((32-1)) | I2S_TCR5_FBT((32-1));
+    I2S1_TCR5 = I2S_TCR5_WNW((ww)) | I2S_TCR5_W0W((ww)) | I2S_TCR5_FBT((ww));
 
     I2S1_RMR = 0;
     //I2S1_RCSR = (1<<25); //Reset
     I2S1_RCR1 = I2S_RCR1_RFW(1);
     I2S1_RCR2 = I2S_RCR2_SYNC(rsync) | I2S_RCR2_BCP  // sync=0; rx is async;
-            | (I2S_RCR2_BCD | I2S_RCR2_DIV((1)) | I2S_RCR2_MSEL(1));
+            | (I2S_RCR2_BCD | I2S_RCR2_DIV((bclk_div)) | I2S_RCR2_MSEL(1));
     I2S1_RCR3 = I2S_RCR3_RCE;
-    I2S1_RCR4 = I2S_RCR4_FRSZ((2-1)) | I2S_RCR4_SYWD((32-1)) | I2S_RCR4_MF
+    I2S1_RCR4 = I2S_RCR4_FRSZ((2-1)) | I2S_RCR4_SYWD((ww)) | I2S_RCR4_MF
             | I2S_RCR4_FSE | I2S_RCR4_FSP | I2S_RCR4_FSD;
-    I2S1_RCR5 = I2S_RCR5_WNW((32-1)) | I2S_RCR5_W0W((32-1)) | I2S_RCR5_FBT((32-1));
+    I2S1_RCR5 = I2S_RCR5_WNW((ww)) | I2S_RCR5_W0W((ww)) | I2S_RCR5_FBT((ww));
 
 #endif
 }
@@ -591,6 +625,131 @@ void AudioOutputI2Ssink_F32::begin(void)
     dma.attachInterrupt(AudioOutputI2S_F32::isr);
 }
 
+#if defined(__IMXRT1062__)
+// Word Start Flag / Interrupt Enable (frame sync) - per the i.MX SAI register map
+// (Linux sound/soc/fsl/fsl_sai.h): WSF = BIT(20), WSIE = BIT(12), SEF = BIT(19).
+#define I2S_RCSR_WSF			((uint32_t)(1<<20))	// Word Start Flag (one per frame sync)
+#define I2S_RCSR_WSIE			((uint32_t)(1<<12))	// Word Start Interrupt Enable
+#define I2S_RCSR_SEF			((uint32_t)(1<<19))	// Sync Error Flag
+
+// Auto-detect the slot word width of the external clock in sink mode.
+//
+// The SAI receiver is put into a short measurement configuration (8-bit
+// words, 8 words per frame = 64 BCLK expected per frame) and the number of
+// words that complete before each frame sync (WSF) is counted with a scratch
+// DMA channel.  Since 8 divides 32/48/64 evenly, a stereo frame of N bits per
+// slot produces exactly N/8 words (4/6/8) with no partial words, regardless of
+// whether the external frame is shorter than the configured 64 BCLK (which
+// merely latches SEF/FEF).  words_per_frame * 4 = bits per slot.
+//
+// Pin-free: uses only the SAI1 RX hardware the sink already owns (pins 20/21
+// muxed to SAI1_RX_SYNC/BCLK) plus the otherwise-unused IRQ_SAI1.
+
+static DMAChannel probe_dma(false);
+static volatile uint32_t probe_frame_count;
+static volatile uint32_t probe_word_count;
+static volatile uint32_t probe_last_citer;
+static volatile uint32_t probe_biter;
+
+static void i2s_word_width_probe_isr(void)
+{
+	uint32_t rcsr = I2S1_RCSR;
+	if (rcsr & I2S_RCSR_WSF) {
+		// frame boundary: count the words completed since the last frame
+		uint32_t cur = probe_dma.TCD->CITER_ELINKNO;
+		uint32_t delta = (probe_last_citer >= cur)
+			? (probe_last_citer - cur)
+			: (probe_last_citer + (probe_biter - cur)); // CITER wrapped to BITER
+		probe_word_count += delta;
+		probe_last_citer = cur;
+		probe_frame_count++;
+		I2S1_RCSR |= I2S_RCSR_WSF; // write-1-to-clear
+	}
+	if (rcsr & I2S_RCSR_SEF) I2S1_RCSR |= I2S_RCSR_SEF;
+	if (rcsr & I2S_RCSR_FEF) I2S1_RCSR |= I2S_RCSR_FEF;
+	if (rcsr & I2S_RCSR_FRF) I2S1_RCSR |= I2S_RCSR_FRF;
+}
+
+static int detect_i2s_word_width(void)
+{
+	static bool done = false;
+	static int result = 32;
+	if (done) return result;
+	done = true;
+
+	int width = 32; // default
+
+	CCM_CCGR5 |= CCM_CCGR5_SAI1(CCM_CCGR_ON);
+
+	// reset + configure RX in 8-bit-word probe mode
+	I2S1_RCSR = I2S_RCSR_SR;
+	I2S1_RCSR = 0;
+	I2S1_RMR = 0;
+	I2S1_RCR1 = I2S_RCR1_RFW(1);
+	I2S1_RCR2 = I2S_RCR2_SYNC(0) | I2S_RCR2_BCP;
+	I2S1_RCR3 = I2S_RCR3_RCE;
+	I2S1_RCR4 = I2S_RCR4_FRSZ(8-1) | I2S_RCR4_SYWD(8-1) | I2S_RCR4_MF
+			| I2S_RCR4_FSE | I2S_RCR4_FSP;
+	I2S1_RCR5 = I2S_RCR5_WNW(8-1) | I2S_RCR5_W0W(8-1) | I2S_RCR5_FBT(8-1);
+
+	// scratch DMA: stream 32-bit FIFO words into a small buffer, count with CITER
+	static uint32_t probe_buf[64];
+	probe_biter = sizeof(probe_buf) / 4;
+	probe_dma.begin(true);
+	probe_dma.TCD->SADDR = (void *)((uint32_t)&I2S1_RDR0 + 0);
+	probe_dma.TCD->SOFF = 0;
+	probe_dma.TCD->ATTR = DMA_TCD_ATTR_SSIZE(2) | DMA_TCD_ATTR_DSIZE(2);
+	probe_dma.TCD->NBYTES_MLNO = 4;
+	probe_dma.TCD->SLAST = 0;
+	probe_dma.TCD->DADDR = probe_buf;
+	probe_dma.TCD->DOFF = 4;
+	probe_dma.TCD->CITER_ELINKNO = probe_biter;
+	probe_dma.TCD->DLASTSGA = -sizeof(probe_buf);
+	probe_dma.TCD->BITER_ELINKNO = probe_biter;
+	probe_dma.TCD->CSR = 0; // no DMA interrupts; the WSF ISR reads CITER
+	probe_dma.triggerAtHardwareEvent(DMAMUX_SOURCE_SAI1_RX);
+
+	probe_frame_count = 0;
+	probe_word_count = 0;
+	probe_last_citer = probe_biter;
+	bool probe_finished = false;
+
+	void (*prev_isr)(void) = _VectorsRam[IRQ_SAI1 + 16];
+	attachInterruptVector(IRQ_SAI1, i2s_word_width_probe_isr);
+	NVIC_ENABLE_IRQ(IRQ_SAI1);
+
+	probe_dma.enable();
+	I2S1_RCSR = I2S_RCSR_RE | I2S_RCSR_BCE | I2S_RCSR_FRDE | I2S_RCSR_FR | I2S_RCSR_WSIE;
+
+	// wait for enough frame syncs, or give up if there is no external clock
+	const int N_FRAMES = 16;
+	unsigned long t0 = millis();
+	while (!probe_finished && (millis() - t0) < 25) {
+		if (probe_frame_count >= N_FRAMES) probe_finished = true;
+	}
+
+	NVIC_DISABLE_IRQ(IRQ_SAI1);
+	attachInterruptVector(IRQ_SAI1, prev_isr);
+	probe_dma.disable();
+	I2S1_RCSR = I2S_RCSR_SR; // reset the probe configuration
+	I2S1_RCSR = 0;
+
+	if (probe_frame_count > 0) {
+		uint32_t words_per_frame = probe_word_count / probe_frame_count; // 4, 6, or 8
+		uint32_t bits = words_per_frame * 4; // 8-bit words, 2 slots/frame
+		if (bits == 16 || bits == 24 || bits == 32) width = (int)bits;
+		Serial.print("AudioI2Ssink: detected ");
+		Serial.print(bits);
+		Serial.print("-bit slots (");
+		Serial.print(words_per_frame);
+		Serial.println(" x 8-bit words/frame)");
+	} else {
+		Serial.println("AudioI2Ssink: no external clock on BCLK/FS, defaulting to 32-bit slots");
+	}
+	return width;
+}
+#endif // __IMXRT1062__
+
 
  void AudioOutputI2Ssink_F32::config_i2s(void)
 {
@@ -651,23 +810,34 @@ void AudioOutputI2Ssink_F32::begin(void)
     IOMUXC_SAI1_RX_BCLK_SELECT_INPUT = 1; // 1=GPIO_AD_B1_11_ALT3, page 868
     IOMUXC_SAI1_RX_SYNC_SELECT_INPUT = 1; // 1=GPIO_AD_B1_10_ALT3, page 872
 
+    // measure the external clock's BCLK/FS ratio and pick the slot word width
+    int ww = 31; // 32-bit default
+    if (expected_word_width == 16 || expected_word_width == 24 || expected_word_width == 32) {
+        word_width = expected_word_width;
+        ww = word_width - 1;
+    } else {
+        word_width = detect_i2s_word_width();
+        ww = (word_width >= 16) ? (word_width - 1) : 31;
+    }
+    AudioInputI2S_F32::setWordWidth(word_width);
+
     // configure transmitter
     I2S1_TMR = 0;
     I2S1_TCR1 = I2S_TCR1_RFW(1);  // watermark at half fifo size
     I2S1_TCR2 = I2S_TCR2_SYNC(1) | I2S_TCR2_BCP;
     I2S1_TCR3 = I2S_TCR3_TCE;
-    I2S1_TCR4 = I2S_TCR4_FRSZ(1) | I2S_TCR4_SYWD(31) | I2S_TCR4_MF
-        | I2S_TCR4_FSE | I2S_TCR4_FSP | I2S_RCR4_FSD;
-    I2S1_TCR5 = I2S_TCR5_WNW(31) | I2S_TCR5_W0W(31) | I2S_TCR5_FBT(31);
+    I2S1_TCR4 = I2S_TCR4_FRSZ(1) | I2S_TCR4_SYWD(ww) | I2S_TCR4_MF
+        | I2S_TCR4_FSE | I2S_TCR4_FSP | I2S_TCR4_FSD;
+    I2S1_TCR5 = I2S_TCR5_WNW(ww) | I2S_TCR5_W0W(ww) | I2S_TCR5_FBT(ww);
 
     // configure receiver
     I2S1_RMR = 0;
     I2S1_RCR1 = I2S_RCR1_RFW(1);
     I2S1_RCR2 = I2S_RCR2_SYNC(0) | I2S_TCR2_BCP;
     I2S1_RCR3 = I2S_RCR3_RCE;
-    I2S1_RCR4 = I2S_RCR4_FRSZ(1) | I2S_RCR4_SYWD(31) | I2S_RCR4_MF
+    I2S1_RCR4 = I2S_RCR4_FRSZ(1) | I2S_RCR4_SYWD(ww) | I2S_RCR4_MF
         | I2S_RCR4_FSE | I2S_RCR4_FSP;
-    I2S1_RCR5 = I2S_RCR5_WNW(31) | I2S_RCR5_W0W(31) | I2S_RCR5_FBT(31);
+    I2S1_RCR5 = I2S_RCR5_WNW(ww) | I2S_RCR5_W0W(ww) | I2S_RCR5_FBT(ww);
 
 #endif
 }

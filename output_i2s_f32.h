@@ -55,6 +55,27 @@ public:
 		audio_block_samples = settings.audio_block_samples;
 		begin();
 	}
+	// Force the I2S slot word width.  Valid values: 16, 24, 32.
+	// 0 (the default) means 32-bit slots in master mode, or auto-detection
+	// from the external clock's BCLK/FS ratio in sink mode.
+	//   16-bit master: short frames, 32*fs bit clock
+	//   24-bit master: short frames, 48*fs bit clock (192*fs MCLK)
+	AudioOutputI2S_F32(int word_width) : AudioStream_F32(2, inputQueueArray)
+	{
+		expected_word_width = word_width;
+		begin();
+	}
+	// Variable sample rate and block size, plus forced slot word width:
+	AudioOutputI2S_F32(const AudioSettings_F32 &settings, int word_width) : AudioStream_F32(2, inputQueueArray)
+	{
+		sample_rate_Hz = settings.sample_rate_Hz;
+		audio_block_samples = settings.audio_block_samples;
+		expected_word_width = word_width;
+		begin();
+	}
+	// Force a slot word width (16/24/32 bits) and skip auto-detection.
+	// Pass 0 (the default) for 32-bit master slots or sink auto-detect.
+	static void setExpectedWordWidth(int w) { expected_word_width = w; }
 
     // outputScale is a gain control for both left and right.  If set exactly
     // to 1.0f it is left as a pass-through.
@@ -80,8 +101,14 @@ public:
 	static void scale_f32_to_i32( float32_t *p_f32, float32_t *p_i32, int len) ;
 
 	static float setI2SFreq_T3(const float);  // I2S clock for T3,x
+	// In sink mode the slot word width is auto-detected from the external
+	// clock's BCLK/FS ratio (16/24/32-bit).  Returns the width in bits.
+	static int getDetectedWordWidth(void) { return word_width; }
 protected:
-	AudioOutputI2S_F32(int dummy): AudioStream_F32(2, inputQueueArray) {} // to be used only inside AudioOutputI2Ssink !!
+	AudioOutputI2S_F32(bool sinkMode, int word_width) : AudioStream_F32(2, inputQueueArray)
+	{
+		expected_word_width = word_width;
+	} // to be used only inside AudioOutputI2Ssink !!
 	static void config_i2s(void);
 	static void config_i2s(bool);
 	static void config_i2s(float);
@@ -96,6 +123,8 @@ protected:
 protected:
 	static float sample_rate_Hz;
 	static int audio_block_samples;
+	static int word_width;            // detected slot word width in bits (16/24/32)
+	static int expected_word_width;   // forced width (0 = auto-detect)
 private:
 	static audio_block_f32_t *block_left_2nd;
 	static audio_block_f32_t *block_right_2nd;
@@ -109,14 +138,17 @@ private:
 // I2S "sink": outputs audio on SAI1 (data out = pin 7) but does NOT generate the
 // bit clock or frame sync.  BCLK (pin 21) and FS (pin 20) must be driven by an
 // external clock source (another Teensy, a codec in its clock-source role, etc.).
-// Expects a 64*fs bit clock (2x 32-bit slots).  On Teensy 4.x this uses full
+// The slot word width (16/24/32-bit) is auto-detected from the external clock's
+// BCLK/FS ratio at startup, or forced with the constructor (or
+// AudioOutputI2S_F32::setExpectedWordWidth).  On Teensy 4.x this uses full
 // 32-bit data in each slot.  On Teensy 3.x it uses the original 16-bit-in-the-
 // upper-half packing.  The DMA ISR drives update_all(), so the audio block
 // scheduler is clocked by the external clock source.
 class AudioOutputI2Ssink_F32 : public AudioOutputI2S_F32
 {
 public:
-	AudioOutputI2Ssink_F32(void) : AudioOutputI2S_F32(0) { begin(); } ;
+	AudioOutputI2Ssink_F32(void) : AudioOutputI2S_F32(true, 0) { begin(); } ;
+	AudioOutputI2Ssink_F32(int word_width) : AudioOutputI2S_F32(true, word_width) { begin(); } ;
 	void begin(void);
 	friend class AudioInputI2Ssink_F32;
 	friend void dma_ch0_isr(void);

@@ -192,11 +192,42 @@ void AudioInputI2S_F32::scale_i32_to_f32( float32_t *p_i32, float32_t *p_f32, in
 	for (int i=0; i<len; i++) { *p_f32++ = ((*p_i32++) * I32_TO_F32_NORM_FACTOR); }
 }
 
+int AudioInputI2S_F32::word_width = 32;
+
+// The DMA fills the float buffer with the raw 32-bit FIFO words CONVERTED to
+// float values (the ISR does "*dest_f32++ = (float32_t)*src++").  With FBT =
+// (word_width-1) the received sample is right-justified in the low bits of the
+// FIFO word and ZERO-extended above, so the stored float equals a 32-bit
+// unsigned-with-positive-bias form of the sample.  These functions recover the
+// signed integer sample (sign-extending the short-frame width, which restores
+// two's complement for negative samples) and scale it to the [-1.0, +1.0]
+// range.  16/24-bit samples fit exactly in the float32 mantissa.
+void AudioInputI2S_F32::unpack_i16_to_f32( float32_t *p_raw, float32_t *p_f32, int len) {
+	for (int i=0; i<len; i++) {
+		int32_t s = (int32_t)(*p_raw++);
+		s = (s << 16) >> 16;   // sign-extend bit 15 (RX FIFO is zero-extended)
+		*p_f32++ = ((float)s * I16_TO_F32_NORM_FACTOR);
+	}
+}
+void AudioInputI2S_F32::unpack_i24_to_f32( float32_t *p_raw, float32_t *p_f32, int len) {
+	for (int i=0; i<len; i++) {
+		int32_t s = (int32_t)(*p_raw++);
+		s = (s << 8) >> 8;   // sign-extend bit 23 (RX FIFO is zero-extended)
+		*p_f32++ = ((float)s * I24_TO_F32_NORM_FACTOR);
+	}
+}
+
  void AudioInputI2S_F32::update_1chan(int chan, audio_block_f32_t *&out_f32) {
 	 if (!out_f32) return;
 
 	//scale the float values so that the maximum possible audio values span -1.0 to + 1.0
-	scale_i32_to_f32(out_f32->data, out_f32->data, audio_block_samples);
+	if (word_width == 16) {
+		unpack_i16_to_f32(out_f32->data, out_f32->data, audio_block_samples);
+	} else if (word_width == 24) {
+		unpack_i24_to_f32(out_f32->data, out_f32->data, audio_block_samples);
+	} else {
+		scale_i32_to_f32(out_f32->data, out_f32->data, audio_block_samples);
+	}
 	//scale_i16_to_f32(out_f32->data, out_f32->data, audio_block_samples);
 
 	//prepare to transmit by setting the update_counter (which helps tell if data is skipped or out-of-order)
