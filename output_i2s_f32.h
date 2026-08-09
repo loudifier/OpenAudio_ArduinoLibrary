@@ -104,6 +104,17 @@ public:
 	// In sink mode the slot word width is auto-detected from the external
 	// clock's BCLK/FS ratio (16/24/32-bit).  Returns the width in bits.
 	static int getDetectedWordWidth(void) { return word_width; }
+	// Sink mode only: re-run the BCLK/FS ratio probe and re-apply the detected
+	// slot word width to SAI1.  The constructor's probe runs during static
+	// init (before the external clock source may have started) and can fall
+	// back to 32-bit slots; call this from setup() once the clock source is
+	// confirmed running to pick up short frames.  Overrides a forced width.
+	// Returns the detected width in bits.
+	static int detectWordWidth(void);
+	// Diagnostics from the last probe: number of frame syncs seen (0 = no
+	// external clock present) and words per frame (4/6/8 -> 16/24/32-bit).
+	static int getProbeFrameCount(void);
+	static int getProbeWordsPerFrame(void);
 protected:
 	AudioOutputI2S_F32(bool sinkMode, int word_width) : AudioStream_F32(2, inputQueueArray)
 	{

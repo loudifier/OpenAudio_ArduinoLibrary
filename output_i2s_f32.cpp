@@ -569,6 +569,10 @@ void AudioOutputI2S_F32::config_i2s(bool transferUsing32bit, float fs_Hz)
 // On Teensy 4.x this uses the same full 32-bit data DMA path as the
 // master AudioOutputI2S_F32 (SSIZE/DSIZE=2, NBYTES=4, TDR0+0).
 
+#if defined(__IMXRT1062__)
+static void start_sink_tx_aligned(void);
+#endif
+
 void AudioOutputI2Ssink_F32::begin(void)
 {
     dma.begin(true); // Allocate the DMA channel first
@@ -616,7 +620,7 @@ void AudioOutputI2Ssink_F32::begin(void)
     dma.enable();
 
     I2S1_RCSR |= I2S_RCSR_RE | I2S_RCSR_BCE;
-    I2S1_TCSR = I2S_TCSR_TE | I2S_TCSR_BCE | I2S_TCSR_FRDE;
+    start_sink_tx_aligned();
 
 #endif
 
@@ -634,119 +638,162 @@ void AudioOutputI2Ssink_F32::begin(void)
 
 // Auto-detect the slot word width of the external clock in sink mode.
 //
-// The SAI receiver is put into a short measurement configuration (8-bit
-// words, 8 words per frame = 64 BCLK expected per frame) and the number of
-// words that complete before each frame sync (WSF) is counted with a scratch
-// DMA channel.  Since 8 divides 32/48/64 evenly, a stereo frame of N bits per
-// slot produces exactly N/8 words (4/6/8) with no partial words, regardless of
-// whether the external frame is shorter than the configured 64 BCLK (which
-// merely latches SEF/FEF).  words_per_frame * 4 = bits per slot.
+// The SAI receiver is configured for 8-bit words and each candidate frame
+// length (8/6/4 words per frame = 32/24/16-bit slots) is tried in turn.  When
+// the configured frame length matches the external BCLK/FS ratio exactly, no
+// sync error (SEF) is generated.  A mismatch always flags SEF: a shorter
+// external frame makes the SAI pad the frame out to the configured length
+// (flagging an early sync), and a longer one misses the expected sync point.
+// The largest candidate with no sync errors over a measurement window is the
+// detected width.
+//
+// Note: an earlier version counted words per frame with a scratch DMA channel
+// (CITER deltas read at each WSF).  That is invalid when the configured frame
+// is longer than the external frame: the SAI pads the frame to the configured
+// length with garbage words, so the count always reads back the configured
+// FRSZ (8), never the real ratio.  Observed: 8 words/frame with SEF set on
+// every frame while probing a 24-bit (48 BCLK) external clock.
 //
 // Pin-free: uses only the SAI1 RX hardware the sink already owns (pins 20/21
 // muxed to SAI1_RX_SYNC/BCLK) plus the otherwise-unused IRQ_SAI1.
 
-static DMAChannel probe_dma(false);
-static volatile uint32_t probe_frame_count;
-static volatile uint32_t probe_word_count;
-static volatile uint32_t probe_last_citer;
-static volatile uint32_t probe_biter;
+static volatile uint32_t probe_frame_count;      // WSF events seen (per config)
+static volatile uint32_t probe_sef_count;         // sync errors seen (per config)
+static volatile uint32_t probe_words_per_frame;   // last probe result (0 = no clock)
 
 static void i2s_word_width_probe_isr(void)
 {
 	uint32_t rcsr = I2S1_RCSR;
 	if (rcsr & I2S_RCSR_WSF) {
-		// frame boundary: count the words completed since the last frame
-		uint32_t cur = probe_dma.TCD->CITER_ELINKNO;
-		uint32_t delta = (probe_last_citer >= cur)
-			? (probe_last_citer - cur)
-			: (probe_last_citer + (probe_biter - cur)); // CITER wrapped to BITER
-		probe_word_count += delta;
-		probe_last_citer = cur;
 		probe_frame_count++;
 		I2S1_RCSR |= I2S_RCSR_WSF; // write-1-to-clear
 	}
-	if (rcsr & I2S_RCSR_SEF) I2S1_RCSR |= I2S_RCSR_SEF;
+	if (rcsr & I2S_RCSR_SEF) {
+		probe_sef_count++;
+		I2S1_RCSR |= I2S_RCSR_SEF;
+	}
 	if (rcsr & I2S_RCSR_FEF) I2S1_RCSR |= I2S_RCSR_FEF;
 	if (rcsr & I2S_RCSR_FRF) I2S1_RCSR |= I2S_RCSR_FRF;
 }
 
 static int detect_i2s_word_width(void)
 {
-	static bool done = false;
-	static int result = 32;
-	if (done) return result;
-	done = true;
-
 	int width = 32; // default
 
 	CCM_CCGR5 |= CCM_CCGR5_SAI1(CCM_CCGR_ON);
-
-	// reset + configure RX in 8-bit-word probe mode
-	I2S1_RCSR = I2S_RCSR_SR;
-	I2S1_RCSR = 0;
-	I2S1_RMR = 0;
-	I2S1_RCR1 = I2S_RCR1_RFW(1);
-	I2S1_RCR2 = I2S_RCR2_SYNC(0) | I2S_RCR2_BCP;
-	I2S1_RCR3 = I2S_RCR3_RCE;
-	I2S1_RCR4 = I2S_RCR4_FRSZ(8-1) | I2S_RCR4_SYWD(8-1) | I2S_RCR4_MF
-			| I2S_RCR4_FSE | I2S_RCR4_FSP;
-	I2S1_RCR5 = I2S_RCR5_WNW(8-1) | I2S_RCR5_W0W(8-1) | I2S_RCR5_FBT(8-1);
-
-	// scratch DMA: stream 32-bit FIFO words into a small buffer, count with CITER
-	static uint32_t probe_buf[64];
-	probe_biter = sizeof(probe_buf) / 4;
-	probe_dma.begin(true);
-	probe_dma.TCD->SADDR = (void *)((uint32_t)&I2S1_RDR0 + 0);
-	probe_dma.TCD->SOFF = 0;
-	probe_dma.TCD->ATTR = DMA_TCD_ATTR_SSIZE(2) | DMA_TCD_ATTR_DSIZE(2);
-	probe_dma.TCD->NBYTES_MLNO = 4;
-	probe_dma.TCD->SLAST = 0;
-	probe_dma.TCD->DADDR = probe_buf;
-	probe_dma.TCD->DOFF = 4;
-	probe_dma.TCD->CITER_ELINKNO = probe_biter;
-	probe_dma.TCD->DLASTSGA = -sizeof(probe_buf);
-	probe_dma.TCD->BITER_ELINKNO = probe_biter;
-	probe_dma.TCD->CSR = 0; // no DMA interrupts; the WSF ISR reads CITER
-	probe_dma.triggerAtHardwareEvent(DMAMUX_SOURCE_SAI1_RX);
-
-	probe_frame_count = 0;
-	probe_word_count = 0;
-	probe_last_citer = probe_biter;
-	bool probe_finished = false;
 
 	void (*prev_isr)(void) = _VectorsRam[IRQ_SAI1 + 16];
 	attachInterruptVector(IRQ_SAI1, i2s_word_width_probe_isr);
 	NVIC_ENABLE_IRQ(IRQ_SAI1);
 
-	probe_dma.enable();
-	I2S1_RCSR = I2S_RCSR_RE | I2S_RCSR_BCE | I2S_RCSR_FRDE | I2S_RCSR_FR | I2S_RCSR_WSIE;
+	bool clock_seen = false;
+	static const int candidates[3] = { 8, 6, 4 }; // words/frame: 32/24/16-bit slots
+	for (int i = 0; i < 3; i++) {
+		int words = candidates[i];
 
-	// wait for enough frame syncs, or give up if there is no external clock
-	const int N_FRAMES = 16;
-	unsigned long t0 = millis();
-	while (!probe_finished && (millis() - t0) < 25) {
-		if (probe_frame_count >= N_FRAMES) probe_finished = true;
+		// reset + configure RX in 8-bit-word probe mode for this frame length
+		I2S1_RCSR = I2S_RCSR_SR;
+		I2S1_RCSR = 0;
+		I2S1_RMR = 0;
+		I2S1_RCR1 = I2S_RCR1_RFW(1);
+		I2S1_RCR2 = I2S_RCR2_SYNC(0) | I2S_RCR2_BCP;
+		I2S1_RCR3 = I2S_RCR3_RCE;
+		I2S1_RCR4 = I2S_RCR4_FRSZ(words-1) | I2S_RCR4_SYWD(8-1) | I2S_RCR4_MF
+				| I2S_RCR4_FSE | I2S_RCR4_FSP;
+		I2S1_RCR5 = I2S_RCR5_WNW(8-1) | I2S_RCR5_W0W(8-1) | I2S_RCR5_FBT(8-1);
+
+		probe_frame_count = 0;
+		probe_sef_count = 0;
+		I2S1_RCSR = I2S_RCSR_RE | I2S_RCSR_BCE | I2S_RCSR_FR | I2S_RCSR_WSIE;
+
+		// settle past the startup transient, then measure sync errors over a
+		// window of frame syncs (or give up if there is no external clock)
+		const int SETTLE = 4;
+		const int MEASURE = 16;
+		unsigned long t0 = millis();
+		while (probe_frame_count < SETTLE && (millis() - t0) < 25) ;
+		if (probe_frame_count < SETTLE) continue; // no clock on this config
+
+		clock_seen = true;
+		NVIC_DISABLE_IRQ(IRQ_SAI1);
+		probe_sef_count = 0;
+		I2S1_RCSR |= I2S_RCSR_SEF; // clear any sync error before measuring
+		NVIC_ENABLE_IRQ(IRQ_SAI1);
+		uint32_t f0 = probe_frame_count;
+		t0 = millis();
+		while ((probe_frame_count - f0) < MEASURE && (millis() - t0) < 25) ;
+
+		if (probe_sef_count == 0 && (probe_frame_count - f0) >= MEASURE) {
+			width = words * 4; // 32, 24, or 16
+			break;              // first (largest) clean candidate wins
+		}
 	}
 
 	NVIC_DISABLE_IRQ(IRQ_SAI1);
 	attachInterruptVector(IRQ_SAI1, prev_isr);
-	probe_dma.disable();
 	I2S1_RCSR = I2S_RCSR_SR; // reset the probe configuration
 	I2S1_RCSR = 0;
 
-	if (probe_frame_count > 0) {
-		uint32_t words_per_frame = probe_word_count / probe_frame_count; // 4, 6, or 8
-		uint32_t bits = words_per_frame * 4; // 8-bit words, 2 slots/frame
-		if (bits == 16 || bits == 24 || bits == 32) width = (int)bits;
+	if (clock_seen) {
+		probe_words_per_frame = width / 4;
 		Serial.print("AudioI2Ssink: detected ");
-		Serial.print(bits);
-		Serial.print("-bit slots (");
-		Serial.print(words_per_frame);
-		Serial.println(" x 8-bit words/frame)");
+		Serial.print(width);
+		Serial.println("-bit slots");
 	} else {
+		probe_words_per_frame = 0;
+		probe_frame_count = 0;
 		Serial.println("AudioI2Ssink: no external clock on BCLK/FS, defaulting to 32-bit slots");
 	}
 	return width;
+}
+#endif // __IMXRT1062__
+
+#if defined(__IMXRT1062__)
+// Program SAI1 for the sink configuration (external BCLK/FS, transmitter
+// sync'd to the external frame sync) with the given slot word width.
+static void configure_sai1_sink_regs(int ww)
+{
+    // configure transmitter
+    I2S1_TMR = 0;
+    I2S1_TCR1 = I2S_TCR1_RFW(1);  // watermark at half fifo size
+    I2S1_TCR2 = I2S_TCR2_SYNC(1) | I2S_TCR2_BCP;
+    I2S1_TCR3 = I2S_TCR3_TCE;
+    I2S1_TCR4 = I2S_TCR4_FRSZ(1) | I2S_TCR4_SYWD(ww) | I2S_TCR4_MF
+        | I2S_TCR4_FSE | I2S_TCR4_FSP | I2S_TCR4_FSD;
+    I2S1_TCR5 = I2S_TCR5_WNW(ww) | I2S_TCR5_W0W(ww) | I2S_TCR5_FBT(ww);
+
+    // configure receiver
+    I2S1_RMR = 0;
+    I2S1_RCR1 = I2S_RCR1_RFW(1);
+    I2S1_RCR2 = I2S_RCR2_SYNC(0) | I2S_TCR2_BCP;
+    I2S1_RCR3 = I2S_RCR3_RCE;
+    I2S1_RCR4 = I2S_RCR4_FRSZ(1) | I2S_RCR4_SYWD(ww) | I2S_RCR4_MF
+        | I2S_RCR4_FSE | I2S_RCR4_FSP;
+    I2S1_RCR5 = I2S_RCR5_WNW(ww) | I2S_RCR5_W0W(ww) | I2S_RCR5_FBT(ww);
+}
+
+// Start the sink transmitter so the first FIFO word (left) is locked to slot
+// 0 of a frame that begins at the external frame sync.  Enabling the
+// transmitter with DMA already active lets the first word get shifted out
+// during the SAI's startup window ("a valid frame sync is ignored (slave
+// mode) for the first four bit clock cycles after enabling the transmitter
+// or receiver", i.MX RT RM 48.4.2.3), which permanently moves every left
+// sample one slot late (left lags right by one sample).  Keeping the FIFO
+// empty and DMA requests off until after the first frame sync edge makes
+// word0 land on slot 0 of the first complete frame instead.
+//
+// The frame sync reference is read from the receiver (RCSR WSF): in sink
+// mode the transmitter is clocked from the receiver's external BCLK/FS, so
+// the TX frame starts on the same edge the RX reports.  A 25 ms timeout
+// guards against an absent clock (falls through to the plain enable).
+static void start_sink_tx_aligned(void)
+{
+	I2S1_TCSR = I2S_TCSR_TE | I2S_TCSR_BCE; // TX on, FIFO empty, no DMA yet
+	I2S1_RCSR |= I2S_RCSR_WSF;             // clear any pending word-start flag
+	unsigned long t0 = millis();
+	while (!(I2S1_RCSR & I2S_RCSR_WSF) && (millis() - t0) < 25) { }
+	I2S1_RCSR |= I2S_RCSR_WSF;             // clear WSF (write-1-to-clear)
+	I2S1_TCSR |= I2S_TCSR_FRDE;            // start DMA; next FS -> slot0 = word0
 }
 #endif // __IMXRT1062__
 
@@ -821,23 +868,59 @@ static int detect_i2s_word_width(void)
     }
     AudioInputI2S_F32::setWordWidth(word_width);
 
-    // configure transmitter
-    I2S1_TMR = 0;
-    I2S1_TCR1 = I2S_TCR1_RFW(1);  // watermark at half fifo size
-    I2S1_TCR2 = I2S_TCR2_SYNC(1) | I2S_TCR2_BCP;
-    I2S1_TCR3 = I2S_TCR3_TCE;
-    I2S1_TCR4 = I2S_TCR4_FRSZ(1) | I2S_TCR4_SYWD(ww) | I2S_TCR4_MF
-        | I2S_TCR4_FSE | I2S_TCR4_FSP | I2S_TCR4_FSD;
-    I2S1_TCR5 = I2S_TCR5_WNW(ww) | I2S_TCR5_W0W(ww) | I2S_TCR5_FBT(ww);
+    configure_sai1_sink_regs(ww);
 
-    // configure receiver
-    I2S1_RMR = 0;
-    I2S1_RCR1 = I2S_RCR1_RFW(1);
-    I2S1_RCR2 = I2S_RCR2_SYNC(0) | I2S_TCR2_BCP;
-    I2S1_RCR3 = I2S_RCR3_RCE;
-    I2S1_RCR4 = I2S_RCR4_FRSZ(1) | I2S_RCR4_SYWD(ww) | I2S_RCR4_MF
-        | I2S_RCR4_FSE | I2S_RCR4_FSP;
-    I2S1_RCR5 = I2S_RCR5_WNW(ww) | I2S_RCR5_W0W(ww) | I2S_RCR5_FBT(ww);
+#endif
+}
 
+// Sink mode only: re-run the BCLK/FS ratio probe and re-apply the detected
+// slot word width to SAI1.  The constructor's probe happens during static
+// init, before setup() and before the external clock source may have started,
+// so it can miss the clock and fall back to 32-bit slots.  Call this from
+// setup() once the clock source is confirmed running to pick up short frames.
+// Overrides a width forced via the constructor.  Returns the detected width.
+int AudioOutputI2S_F32::detectWordWidth(void)
+{
+#if defined(__IMXRT1062__)
+    bool tx_was_enabled = (I2S1_TCSR & I2S_TCSR_TE);
+    bool rx_was_enabled = (I2S1_RCSR & I2S_RCSR_RE);
+
+    int w = detect_i2s_word_width();
+    word_width = (w == 16 || w == 24 || w == 32) ? w : 32;
+    int ww = word_width - 1;
+    AudioInputI2S_F32::setWordWidth(word_width);
+
+    // reset both directions so the new frame/slot config takes effect, then
+    // reprogram the sink configuration with the detected width
+    I2S1_TCSR = I2S_TCSR_SR;
+    I2S1_TCSR = 0;
+    I2S1_RCSR = I2S_RCSR_SR;
+    I2S1_RCSR = 0;
+    configure_sai1_sink_regs(ww);
+
+    if (rx_was_enabled) I2S1_RCSR = I2S_RCSR_RE | I2S_RCSR_BCE | I2S_RCSR_FRDE | I2S_RCSR_FR;
+    if (tx_was_enabled) start_sink_tx_aligned();
+    return word_width;
+#else
+    return 32;
+#endif
+}
+
+// Diagnostics from the most recent probe: 0 frame syncs seen means there was
+// no external clock on BCLK/FS (the sink defaulted to 32-bit slots).
+int AudioOutputI2S_F32::getProbeFrameCount(void)
+{
+#if defined(__IMXRT1062__)
+    return (int)probe_frame_count;
+#else
+    return 0;
+#endif
+}
+int AudioOutputI2S_F32::getProbeWordsPerFrame(void)
+{
+#if defined(__IMXRT1062__)
+    return (int)probe_words_per_frame;   // 4/6/8 -> 16/24/32-bit slots
+#else
+    return 0;
 #endif
 }
