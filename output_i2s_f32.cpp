@@ -220,12 +220,14 @@ void AudioOutputI2S_F32::isr(void)
         offsetR += audio_block_samples / 2;
     } else if (blockL) {
         //memcpy_tointerleaveLR(dest, blockL->data + offsetL, blockR->data + offsetR);
+        memset(dest, 0, audio_block_samples * 4); //silence the right (odd) slots
         float32_t *pL = blockL->data + offsetL;
-        for (int i=0; i < audio_block_samples / 2 * 2; i+=2) { *(d+i) = (int32_t) *pL++; } //interleave
+        for (int i=0; i < audio_block_samples / 2 * 2; i+=2) { *(d+i) = (int32_t) *pL++; } //interleave: left at even slots
         offsetL += audio_block_samples / 2;
     } else if (blockR) {
+        memset(dest, 0, audio_block_samples * 4); //silence the left (even) slots
         float32_t *pR = blockR->data + offsetR;
-        for (int i=0; i < audio_block_samples /2 * 2; i+=2) { *(d+i) = (int32_t) *pR++; } //interleave
+        for (int i=0; i < audio_block_samples /2 * 2; i+=2) { *(d+i+1) = (int32_t) *pR++; } //interleave: right at ODD slots
         offsetR += audio_block_samples / 2;
     } else {
         //memset(dest,0,AUDIO_BLOCK_SAMPLES * 2);

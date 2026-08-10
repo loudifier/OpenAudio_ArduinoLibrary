@@ -140,9 +140,10 @@ void AudioOutputI2SQuad_F32::isr(void)
     //  Only the left input has something connected.
     else if (block_left_1st)
     {
-        for (int i = 0, j = 0; i < 64 && j < 256; i = i + 1, j = j + 4)
+        for (int i = 0, j = 0; i < half_block_length && j < half_buffer_length; i = i + 1, j = j + 4)
         {
             dest[j] = block_left_1st->data[i + offset];
+            dest[j + 2] = 0; //silence the right slot
         }
     }
     // Only the right input has something connected.
@@ -150,6 +151,7 @@ void AudioOutputI2SQuad_F32::isr(void)
     {
         for (int i = 0, j = 0; i < half_block_length && j < half_buffer_length; i = i + 1, j = j + 4)
         {
+            dest[j] = 0; //silence the left slot
             dest[j + 2] = block_right_1st->data[i + offset];
         }
     }
@@ -171,6 +173,7 @@ void AudioOutputI2SQuad_F32::isr(void)
         for (int i = 0, j = 0; i < half_block_length && j < half_buffer_length; i = i + 1, j = j + 4)
         {
             dest[j + 1] = block_left_2nd->data[i + offset];
+            dest[j + 3] = 0; //silence the right slot
         }
     }
     // Only the right input has something connected.
@@ -178,6 +181,7 @@ void AudioOutputI2SQuad_F32::isr(void)
     {
         for (int i = 0, j = 0; i < half_block_length && j < half_buffer_length; i = i + 1, j = j + 4)
         {
+            dest[j + 1] = 0; //silence the left slot
             dest[j + 3] = block_right_2nd->data[i + offset];
         }
     }
