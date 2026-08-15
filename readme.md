@@ -20,8 +20,6 @@ The primary documentation is the Design Tool.  Clicking on any of the classes br
 **Teensy 3 and 4** During 2020 this library has undergone revision to make it Teensy 4.x compatible.  Much of this related to using multiple sampling rates with the I2S clocks and the interrupt/DMA code for data transfer. The files and associated classes output_i2s_f32.h, output_i2s_f32.cpp, input_i2s_f32.h, input_i2s_f32.cpp are now
 ready to be used for T3.x and T4.x.  There are some restrictions, particularly this should be used with 16-bit I2S codec data. Codec sample rates can be varied. Variable block size is supported, but be sure the settings option is used.  Thanks to Chip, @jcj83429 and all the Teensy development folks.
 
-**TDM 8/16 Channel** Teensy 4.x TDM I/O is available as Float32 modules: `input_tdm8_f32`, `output_tdm8_f32`, `input_tdm16_f32`, `output_tdm16_f32` (classes `AudioInputTDM8_F32`, `AudioOutputTDM8_F32`, `AudioInputTDM16_F32`, `AudioOutputTDM16_F32`). Each uses 32-bit TDM slots on SAI1 (pins 7/8 TX/RX data, 23 MCLK, 21 BCLK, 20 SYNC). See `docs/TDM_AUDIO.md`.
-
 **Tympan Project** Many of the classes in this library were put together as part of the [Tympan Project.](https://github.com/Tympan)  That is oriented towards open-source hearing aid and hearing aid development tools. It has its own [Tympan Design Tool](https://tympan.github.io/Tympan_Audio_Design_Tool/) as well as some custom Teensy-based hardware. Additionally, there are a few classes in this library that use terminology and variables that are specific to audiology.  It is intended that these, in time, be replaced by similar classes with more conventional descriptors.  And, of course, if your interest is in hearing aids, you should spend time at the Tympan project!
 
 Notes
@@ -33,6 +31,8 @@ add "#include USB_Audio_F32.h" to the INO file and before compiling, go to the
 IDE Tools>USB Type and set the radio button to "Audio."  This should then compile without error.
 Also, using this class requires some amount of I16 audio memory, such as a line in the top of
 the INO, "AudioMemory(10);"
+
+On Teensy 4.x this library also provides multi-channel USB Audio 2.0, ported and expanded from [teensy-4-usbAudio](https://github.com/alex6679/teensy-4-usbAudio). Channel count, sample rate, and bit depth are configurable in Arduino IDE via the Tools menu. This requires a patched Teensy core - see Installation below and `docs/MULTICHANNEL_USB_AUDIO.md`.
 
 2 - This library generally supports changing sample rates within the range of the Codec hardware
 being used. See Examples/PassthroughF32/PassthroughF32.ino.  In addition, be aware that classes that
@@ -54,6 +54,14 @@ Restart your Arduino IDE and you should now see this libraries example sketches 
 After installing this library into your Arduino->Libraries direction, you can have access to any of these capabilities simply by including the following command in your Arduino sketch: `#include <OpenAudio_ArduinoLibrary.h>`.
 
 As an alternative to the ZIP download, you can use git to maintain a local copy of the library.  This has the advantage of easy updating.  See GitHub and git documentation on how to do this.
+
+**Teensy 4.x multi-channel USB audio** requires a patched Teensy core (multi-channel `usb_desc.h`/`usb_audio.*` files plus the USB Audio Channels menu).  From the library root, run:
+
+```powershell
+.\scripts\setup.ps1
+```
+
+The script detects your Teensyduino installation, backs up the original core files to `backups/`, applies the patches, installs the library into `Documents\Arduino\libraries\`, and validates the result.  Restore the originals anytime with `.\scripts\restore_teensy_audio.ps1`.  See `docs/MULTICHANNEL_USB_AUDIO.md` for details.
 
 Dependencies
 ------------
